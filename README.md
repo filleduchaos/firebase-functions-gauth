@@ -18,7 +18,14 @@ Firebase CLI and logged in from the command line.
   OAuth callback.
   - Go to your [Google console](https://console.developers.google.com).
   - Make sure your Firebase project is the current selected project.
+  - Click on `Enable APIs and Services`, search for and enable the Calendar API.
   - From the `APIs and Services` side menu, navigate to the Credentials page.
+  - Add the **server** secret key to your app configuration:
+
+    ```bash
+    firebase functions:config:set gauth.server_api_key=YOUR_SERVER_API_KEY
+    ```
+
   - Under the `OAuth 2.0 client IDs` section, click on the web client that was
     auto created by Google.
   - Add the client ID and secret at the top of the page to your configuration
@@ -47,9 +54,13 @@ That's it! :)
 - If you check your Firebase database, you should see a `__tokens__` ref that has
   a credentials object for your user ID (protected from non-admin read/write access)
 - You can test the offline access by visiting `https://<YOUR_PROJECT_DOMAIN>/list-events?userID=<A_USER_ID>`.
-  A list of the user's calendar events should be returned as a JSON if they have
-  granted access previously.
+  A list of the user's calendar events for the coming week should be returned as a
+  JSON if they have granted access previously.
+  Also, visiting `https://<YOUR_PROJECT_DOMAIN>/add-event?userID=<A_USER_ID>` will
+  add an event at a random time in the upcoming week to the user's calendar.
 
 ## More
+
+Check out the `react-app` branch for a more robust client implemented in React.
 
 I might be turning this into a full-fledged library, so stay tuned!

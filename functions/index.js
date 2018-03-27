@@ -38,7 +38,7 @@ const checkAuthMiddleware = (req, res, next) => {
         return res.status(401);
       });
   }
-  return res.statusCode(401);
+  return res.sendStatus(401);
 };
 
 exports.grantGooglePermissions = functions.https.onRequest((req, res) => (
@@ -73,9 +73,20 @@ exports.googleOAuth2Callback = functions.https.onRequest((req, res) => {
       })
       .catch((err) => {
         console.error(err);
-        return res.statusCode(500);
+        return res.sendStatus(500);
       });
   }
+});
+
+const MILLISECONDS_IN_DAY = 8.64e7;
+const filterEvent = event => ({
+  id: event.id,
+  status: event.status,
+  link: event.htmlLink,
+  summary: event.summary,
+  start: event.start.dateTime,
+  end: event.end.dateTime,
+  hangout: event.hangoutLink
 });
 
 exports.listPrimaryCalendarEvents = functions.https.onRequest((req, res) => {
@@ -90,17 +101,111 @@ exports.listPrimaryCalendarEvents = functions.https.onRequest((req, res) => {
         if (tokens) {
           const oauth2Client = getOAuthClient();
           oauth2Client.setCredentials(tokens);
-          return calendarService.events.list({
+          const now = new Date();
+          const defaultOptions = {
             auth: oauth2Client,
             calendarId: 'primary',
-          }, (err, response) => {
+            key: gauthKeys.server_api_key,
+            orderBy: 'startTime',
+            singleEvents: true,
+            timeMax: (new Date(now.getTime() + 7*MILLISECONDS_IN_DAY)).toISOString(),
+            timeMin: now.toISOString(),
+          };
+
+          const yieldEvents = (list = [], pageToken) => new Promise((resolve, reject) => {
+            const options = pageToken ? Object.assign({}, defaultOptions, { pageToken }) : defaultOptions;
+            calendarService.events.list(options, (err, { data }) => {
+              if (err) {
+                reject(err);
+              } else {
+                const newList = list.concat(data.items.map(filterEvent));
+                if (data.nextPageToken) {
+                  resolve(yieldEvents(newList, data.nextPageToken));
+                } else {
+                  resolve(newList);
+                }
+              }
+            });
+          });
+
+          return yieldEvents()
+            .then(eventsList => userTokensRef.update(oauth2Client.credentials)
+              .then(() => res.status(200).json({ list: eventsList || [] })))
+            .catch(err => { throw err });
+        }
+
+        return res.status(403).json({ message: 'No tokens for this user' });
+      })
+      .catch((err) => {
+        console.error(err);
+        return res.sendStatus(500);
+      });
+  } else {
+    return res.status(400).json({ message: 'Please provide a user id' });
+  }
+});
+
+const getRandomTimes = () => {
+  const now = new Date();
+  const date = new Date(
+    now.getTime() +
+    MILLISECONDS_IN_DAY +
+    (Math.random() * 6 * MILLISECONDS_IN_DAY)
+  );
+  date.setUTCHours(0, 0, 0, 0);
+  const startHour = Math.round(9 + (Math.random() * 10));
+  date.setUTCHours(startHour);
+  const start = date.toISOString();
+  date.setUTCHours(startHour + 1);
+  const end = date.toISOString();
+  
+  return { start, end };
+};
+
+exports.addPrivateStreamEvent = functions.https.onRequest((req, res) => {
+  // You should probably be more secure about this! This is just a sample
+  const { userID } = req.query;
+
+  if (userID) {
+    const userTokensRef = tokenStore.child(userID);
+
+    return userTokensRef.once('value')
+      .then(snapshot => snapshot.exists() && snapshot.val())
+      .then(tokens => {
+        if (tokens) {
+          const times = getRandomTimes();
+          const event = {
+            summary: 'Tune in to my show!',
+            description: "A private stream just for you.",
+            start: {
+              dateTime: times.start,
+              timeZone: 'Africa/Lagos',
+            },
+            end: {
+              dateTime: times.end,
+              timeZone: 'Africa/Lagos',
+            },
+            reminders: {
+              'useDefault': true,
+            },
+          };
+
+          const oauth2Client = getOAuthClient();
+          oauth2Client.setCredentials(tokens);
+
+          return calendarService.events.insert({
+            auth: oauth2Client,
+            calendarId: 'primary',
+            key: gauthKeys.server_api_key,
+            resource: event,
+          }, (err, { data: event }) => {
             if (err) {
               console.error(err);
-              return res.statusCode(500);
+              return res.sendStatus(500);
             }
+
             // Update tokens in database
-            return userTokensRef.update(oauth2Client.credentials)
-              .then(() => res.status(200).json(response));
+            return res.status(201).json({ event: (event && filterEvent(event)) || {} });
           });
         }
 
@@ -108,7 +213,9 @@ exports.listPrimaryCalendarEvents = functions.https.onRequest((req, res) => {
       })
       .catch((err) => {
         console.error(err);
-        return res.statusCode(500);
+        return res.sendStatus(500);
       });
+  } else {
+    return res.status(400).json({ message: 'Please provide a user id' });
   }
 });

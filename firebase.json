@@ -26,6 +26,10 @@
       {
         "source": "/list-events",
         "function": "listPrimaryCalendarEvents"
+      },
+      {
+        "source": "/add-event",
+        "function": "addPrivateStreamEvent"
       }
     ]
   }
