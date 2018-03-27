@@ -13,6 +13,16 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/grant-google-permissions",
+        "function": "grantGooglePermissions"
+      },
+      {
+        "source": "/google-oauth2-callback",
+        "function": "googleOAuth2Callback"
+      }
     ]
   }
 }
