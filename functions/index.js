@@ -10,13 +10,13 @@ const googleScopes = [
   // https://developers.google.com/identity/protocols/googlescopes
 ];
 
-const OAuth2 = google.auth.OAuth2;
-const oauth2Client = new OAuth2(
+const getOAuthClient = () => new google.auth.OAuth2(
   gauthKeys.client_id,
   gauthKeys.client_secret,
   // You can replace the domain here with a custom domain name if you have one
   `https://${process.env.GCLOUD_PROJECT}.firebaseapp.com/google-oauth2-callback`
 );
+const calendarService = google.calendar('v3');
 
 // Change the database reference as you like. Don't forget to edit the database
 // rules as well!
@@ -43,7 +43,7 @@ const checkAuthMiddleware = (req, res, next) => {
 
 exports.grantGooglePermissions = functions.https.onRequest((req, res) => (
   checkAuthMiddleware(req, res, () => {
-    const url = oauth2Client.generateAuthUrl({
+    const url = getOAuthClient().generateAuthUrl({
       access_type: 'offline',
       // This will be passed to the OAuth callback 
       state: req.userID,
@@ -59,20 +59,56 @@ exports.googleOAuth2Callback = functions.https.onRequest((req, res) => {
   const { code, state: userID } = req.query;
 
   if (code && userID) {
-    return oauth2Client.getToken(code)
+    return getOAuthClient().getToken(code)
       .then(({ tokens }) => {
-        if (tokens && tokens.refresh_token) {
-          return tokenStore.child(userID).set(tokens.refresh_token)
+        if (tokens) {
+          return tokenStore.child(userID).update(tokens)
             .then(() => {
-              console.log(`Got token for ${userID}`);
+              console.log(`Got tokens for ${userID}`);
               return res.redirect('/success.html');
             });
         }
 
-        return console.error(`Refresh token not found. No action taken.`);
+        return console.error(`No tokens returned. No action taken.`);
       })
       .catch((err) => {
         console.error(err);
+        return res.statusCode(500);
+      });
+  }
+});
+
+exports.listPrimaryCalendarEvents = functions.https.onRequest((req, res) => {
+  // You should probably be more secure about this! This is just a sample
+  const { userID } = req.query;
+
+  if (userID) {
+    const userTokensRef = tokenStore.child(userID);
+    return userTokensRef.once('value')
+      .then(snapshot => snapshot.exists() && snapshot.val())
+      .then(tokens => {
+        if (tokens) {
+          const oauth2Client = getOAuthClient();
+          oauth2Client.setCredentials(tokens);
+          return calendarService.events.list({
+            auth: oauth2Client,
+            calendarId: 'primary',
+          }, (err, response) => {
+            if (err) {
+              console.error(err);
+              return res.statusCode(500);
+            }
+            // Update tokens in database
+            return userTokensRef.update(oauth2Client.credentials)
+              .then(() => res.status(200).json(response));
+          });
+        }
+
+        return res.status(403).json({ message: 'No tokens for this user' });
+      })
+      .catch((err) => {
+        console.error(err);
+        return res.statusCode(500);
       });
   }
 });

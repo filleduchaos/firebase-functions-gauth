@@ -39,3 +39,17 @@ Firebase CLI and logged in from the command line.
   - From the command line, run `firebase deploy` to push the app live
 
 That's it! :)
+
+## How to use
+
+- Navigate to your hosted project URL, sign in (if necessary) and grant Google
+  permissions
+- If you check your Firebase database, you should see a `__tokens__` ref that has
+  a credentials object for your user ID (protected from non-admin read/write access)
+- You can test the offline access by visiting `https://<YOUR_PROJECT_DOMAIN>/list-events?userID=<A_USER_ID>`.
+  A list of the user's calendar events should be returned as a JSON if they have
+  granted access previously.
+
+## More
+
+I might be turning this into a full-fledged library, so stay tuned!
